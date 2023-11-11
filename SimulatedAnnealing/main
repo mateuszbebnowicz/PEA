@@ -1,0 +1,277 @@
+import math
+import random
+import numpy as np
+import csv
+import psutil
+from tqdm import tqdm
+import os
+import time
+
+MAX_ITERATIONS = 100000  # Or some other suitable number based on your requirements
+
+
+# Define the cooling schedules
+def geometric_cooling(current_temp, cooling_rate):
+    return current_temp * cooling_rate
+
+
+def boltzmann_cooling(current_temp, k, iteration):
+    return current_temp / math.log(iteration + k)
+
+
+# Define initial temperature strategies
+def standard_deviation_temperature(distance_matrix):
+    # Calculate the standard deviation of the distances
+    distances = [
+        distance_matrix[i][j]
+        for i in range(len(distance_matrix))
+        for j in range(len(distance_matrix[i]))
+        if i != j
+    ]
+    return np.std(distances)
+
+
+def fixed_temperature(value):
+    return value
+
+
+# Define solution choice strategies
+def random_initial_solution(distance_matrix):
+    # Generate a random solution (random path)
+    solution = list(range(len(distance_matrix)))
+    random.shuffle(solution)
+    return solution
+
+
+def greedy_initial_solution(distance_matrix):
+    # Starts at the first city and always goes to the nearest city not yet visited
+    n = len(distance_matrix)
+    start = 0  # Can be randomized or selected by some criteria
+    unvisited = set(range(n))
+    unvisited.remove(start)
+    solution = [start]
+
+    current_city = start
+    while unvisited:
+        next_city = min(unvisited, key=lambda city: distance_matrix[current_city][city])
+        unvisited.remove(next_city)
+        solution.append(next_city)
+        current_city = next_city
+
+    return solution
+
+
+# Define neighborhood exploration strategies
+def get_neighborhood(solution):
+    # Generate all possible 2-opt neighbors of the current solution
+    neighbors = []
+    for i in range(1, len(solution) - 2):
+        for j in range(i + 1, len(solution)):
+            if j - i == 1:
+                continue  # this would be a no-op change
+            new_solution = solution[:i] + solution[j : i - 1 : -1] + solution[j + 1 :]
+            neighbors.append(new_solution)
+    return neighbors
+
+
+# Define swap strategies
+def two_opt_swap(solution):
+    # Randomly pick two edges and perform a 2-opt swap
+    city1 = random.randint(1, len(solution) - 2)
+    city2 = random.randint(city1 + 1, len(solution) - 1)
+
+    new_solution = solution[:city1] + solution[city1:city2][::-1] + solution[city2:]
+    return new_solution
+
+
+def subset_shuffle_swap(solution):
+    # Randomly choose two indices to determine the subset to shuffle
+    start = random.randint(0, len(solution) - 2)
+    end = random.randint(start + 1, len(solution) - 1)
+
+    # Extract the subset and shuffle it
+    subset = solution[start:end]
+    random.shuffle(subset)
+
+    # Replace the original subset with the shuffled subset
+    new_solution = solution[:start] + subset + solution[end:]
+
+    return new_solution
+
+
+def simulated_annealing(distance_matrix, initial_temp, cooling_schedule, swap_strategy):
+    current_solution = random_initial_solution(distance_matrix)
+    current_temp = initial_temp
+    best_solution = current_solution
+    best_cost = calculate_cost(distance_matrix, best_solution)
+    iteration = 0
+
+    while not stopping_condition(current_temp, iteration):
+        new_solution = swap_strategy(current_solution)
+        new_cost = calculate_cost(distance_matrix, new_solution)
+        cost_difference = new_cost - best_cost
+
+        if (
+            cost_difference < 0
+            or math.exp(-cost_difference / current_temp) > random.random()
+        ):
+            current_solution = new_solution
+            if new_cost < best_cost:
+                best_solution = new_solution
+                best_cost = new_cost
+
+        current_temp = cooling_schedule(current_temp, iteration)
+        iteration += 1
+
+    return best_cost, best_solution  # Return both cost and path
+
+
+def calculate_cost(distance_matrix, path):
+    cost = 0
+    print(f"Path: {path}")  # Debug print
+    print(
+        f"Distance matrix size: {len(distance_matrix)}x{len(distance_matrix[0])}"
+    )  # Debug print
+    for i in range(1, len(path)):
+        print(f"Processing edge from {path[i - 1]} to {path[i]}")  # Debug print
+        if path[i - 1] >= len(distance_matrix) or path[i] >= len(distance_matrix):
+            raise IndexError(
+                f"City index out of range: {path[i-1]} or {path[i]} not in distance matrix."
+            )
+        if path[i - 1] < 0 or path[i] < 0:
+            raise IndexError(
+                f"City index cannot be negative: {path[i-1]} or {path[i]}."
+            )
+        cost += distance_matrix[path[i - 1]][path[i]]
+    # Add the distance to return to the start for a closed loop TSP
+    if path:
+        print(f"Returning to start from {path[-1]} to {path[0]}")  # Debug print
+        cost += distance_matrix[path[-1]][path[0]]
+    return cost
+
+
+# Define stopping condition
+def stopping_condition(current_temp, iteration):
+    # Implement the stopping condition for the simulated annealing
+    return current_temp < 1 or iteration > MAX_ITERATIONS
+
+
+# Define a dictionary to map strategy names to functions
+cooling_schedules = {
+    "geometric_cooling": geometric_cooling,
+    "boltzmann_cooling": boltzmann_cooling,
+    # Add more cooling schedules as needed
+}
+
+swap_strategies = {
+    "two_opt_swap": two_opt_swap,
+    "subset_shuffle_swap": subset_shuffle_swap,
+    # Add more swap strategies as needed
+}
+
+
+def parse_config(config_file):
+    tsp_instances = []
+    settings = {
+        "cooling_temperature": None,
+        "cooling_schedule": None,
+        "swap_strategy": None,
+    }
+    with open(config_file, "r") as file:
+        lines = file.readlines()
+        # Assume the first line contains the cooling temperature
+        for setting_line in lines[:3]:  # Assuming the first 3 lines are settings
+            if "=" in setting_line:
+                key, value = setting_line.strip().split("=")
+                settings[key] = value.strip()
+
+        for line in lines[3:]:
+            parts = line.split()
+            if parts:  # skip empty lines
+                instance = {
+                    "file_name": parts[0],
+                    "times_to_run": int(parts[1]),
+                    "number_of_instances": int(parts[2]),
+                    # ... include additional parameters as needed
+                }
+            tsp_instances.append(instance)
+    return settings, tsp_instances
+
+
+def read_tsp_data(filename):
+    full_path = os.path.join("data", filename)
+    with open(full_path, "r") as file:
+        lines = file.read().splitlines()
+        size = int(lines[0])
+        matrix = []
+        for line in lines[1:]:
+            matrix.append(list(map(int, line.split())))
+        return matrix
+
+
+# Main function to run the program
+def main():
+    # Main function to run the program
+    config_file = "config.ini"
+    settings, tsp_instances = parse_config(config_file)
+    # Specify the correct delimiter here, if your system expects something other than a comma
+    delimiter = ","
+
+    # Open the CSV file in write mode
+    with open("tsp_sa_results.csv", mode="w", newline="") as file:
+        writer = csv.writer(
+            file, delimiter=delimiter, quotechar='"', quoting=csv.QUOTE_MINIMAL
+        )
+
+        # Write the header if the file is new/empty
+        writer.writerow(["instance", "time", "cost", "path", "peak_memory_usage_in_MB"])
+        # Load or define your distance matrix
+        for instance in tsp_instances:
+            distance_matrix = read_tsp_data(instance["file_name"])
+            for _ in tqdm(
+                range(instance["times_to_run"]),
+                desc=f"Processing {instance['file_name']}",
+            ):
+                # Set up the parameters for simulated annealing
+                cooling_temperature = float(settings["cooling_temperature"])
+                selected_cooling_schedule = cooling_schedules[
+                    settings["cooling_schedule"]
+                ]
+                selected_swap_strategy = swap_strategies[settings["swap_strategy"]]
+
+                start_time = time.time_ns()
+                initial_memory = psutil.Process().memory_info().rss
+
+                cost, path = simulated_annealing(
+                    distance_matrix=distance_matrix,
+                    initial_temp=cooling_temperature,
+                    cooling_schedule=selected_cooling_schedule,
+                    swap_strategy=selected_swap_strategy,
+                )
+
+                peak_memory = psutil.Process().memory_info().rss
+                end_time = time.time_ns()
+
+                # Calculate execution time in microseconds
+                execution_time_ns = end_time - start_time
+
+                # Calculate peak memory usage in MB
+                peak_memory_usage_mb = (peak_memory - initial_memory) / 1024 / 1024
+
+                # Format the path as a string if necessary
+                path_str = "-".join(map(str, path))
+
+                # Write the result immediately to the CSV file
+                writer.writerow(
+                    [
+                        instance["file_name"],
+                        execution_time_ns,
+                        cost,
+                        path_str,
+                        peak_memory_usage_mb,
+                    ]
+                )
+
+
+if __name__ == "__main__":
+    main()
