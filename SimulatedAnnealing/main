@@ -1,6 +1,5 @@
 import math
 import random
-import numpy as np
 import csv
 import psutil
 from tqdm import tqdm
@@ -19,30 +18,12 @@ def boltzmann_cooling(current_temp, k, iteration):
     return current_temp / math.log(iteration + k)
 
 
-# Define initial temperature strategies
-def standard_deviation_temperature(distance_matrix):
-    # Calculate the standard deviation of the distances
-    distances = [
-        distance_matrix[i][j]
-        for i in range(len(distance_matrix))
-        for j in range(len(distance_matrix[i]))
-        if i != j
-    ]
-    return np.std(distances)
-
-
+# Define initial temperature strategie
 def fixed_temperature(value):
     return value
 
 
 # Define solution choice strategies
-def random_initial_solution(distance_matrix):
-    # Generate a random solution (random path)
-    solution = list(range(len(distance_matrix)))
-    random.shuffle(solution)
-    return solution
-
-
 def greedy_initial_solution(distance_matrix):
     # Starts at the first city and always goes to the nearest city not yet visited
     n = len(distance_matrix)
@@ -99,29 +80,31 @@ def subset_shuffle_swap(solution):
     return new_solution
 
 
-def simulated_annealing(distance_matrix, initial_temp, cooling_schedule, swap_strategy):
-    current_solution = random_initial_solution(distance_matrix)
+# SA implementation
+def simulated_annealing(distance_matrix, initial_temp, cooling_schedule, swap_strategy, initial_solution, epoch_length):
+    current_solution = initial_solution
     current_temp = initial_temp
     best_solution = current_solution
     best_cost = calculate_cost(distance_matrix, best_solution)
     iteration = 0
 
     while not stopping_condition(current_temp, iteration):
-        new_solution = swap_strategy(current_solution)
-        new_cost = calculate_cost(distance_matrix, new_solution)
-        cost_difference = new_cost - best_cost
+        for _ in range(epoch_length):  # Iterate for epoch_length times before cooling
+            new_solution = swap_strategy(current_solution)
+            new_cost = calculate_cost(distance_matrix, new_solution)
+            cost_difference = new_cost - best_cost
 
-        if (
-            cost_difference < 0
-            or math.exp(-cost_difference / current_temp) > random.random()
-        ):
-            current_solution = new_solution
-            if new_cost < best_cost:
-                best_solution = new_solution
-                best_cost = new_cost
+            if (
+                cost_difference < 0
+                or math.exp(-cost_difference / current_temp) > random.random()
+            ):
+                current_solution = new_solution
+                if new_cost < best_cost:
+                    best_solution = new_solution
+                    best_cost = new_cost
 
-        current_temp = cooling_schedule(current_temp, iteration)
-        iteration += 1
+            current_temp = cooling_schedule(current_temp, iteration)
+            iteration += 1
 
     return best_cost, best_solution  # Return both cost and path
 
@@ -214,6 +197,10 @@ def main():
     # Main function to run the program
     config_file = "config.ini"
     settings, tsp_instances = parse_config(config_file)
+    initial_temp = fixed_temperature(float(settings['cooling_temperature']))
+    initial_solution_strategy = greedy_initial_solution
+    # Define a range of epoch lengths to test
+    epoch_lengths = [10, 50, 100, 500, 1000]
     # Specify the correct delimiter here, if your system expects something other than a comma
     delimiter = ","
 
@@ -226,51 +213,55 @@ def main():
         # Write the header if the file is new/empty
         writer.writerow(["instance", "time", "cost", "path", "peak_memory_usage_in_MB"])
         # Load or define your distance matrix
-        for instance in tsp_instances:
-            distance_matrix = read_tsp_data(instance["file_name"])
-            for _ in tqdm(
-                range(instance["times_to_run"]),
-                desc=f"Processing {instance['file_name']}",
-            ):
-                # Set up the parameters for simulated annealing
-                cooling_temperature = float(settings["cooling_temperature"])
-                selected_cooling_schedule = cooling_schedules[
-                    settings["cooling_schedule"]
-                ]
-                selected_swap_strategy = swap_strategies[settings["swap_strategy"]]
-
-                start_time = time.time_ns()
-                initial_memory = psutil.Process().memory_info().rss
-
-                cost, path = simulated_annealing(
-                    distance_matrix=distance_matrix,
-                    initial_temp=cooling_temperature,
-                    cooling_schedule=selected_cooling_schedule,
-                    swap_strategy=selected_swap_strategy,
-                )
-
-                peak_memory = psutil.Process().memory_info().rss
-                end_time = time.time_ns()
-
-                # Calculate execution time in microseconds
-                execution_time_ns = end_time - start_time
-
-                # Calculate peak memory usage in MB
-                peak_memory_usage_mb = (peak_memory - initial_memory) / 1024 / 1024
-
-                # Format the path as a string if necessary
-                path_str = "-".join(map(str, path))
-
-                # Write the result immediately to the CSV file
-                writer.writerow(
-                    [
-                        instance["file_name"],
-                        execution_time_ns,
-                        cost,
-                        path_str,
-                        peak_memory_usage_mb,
+        for epoch_length in epoch_lengths:
+            writer.writerow(epoch_length)
+            for instance in tsp_instances:
+                distance_matrix = read_tsp_data(instance["file_name"])
+                initial_solution = initial_solution_strategy(distance_matrix)
+                for _ in tqdm(
+                    range(instance["times_to_run"]),
+                    desc=f"Processing {instance['file_name']}",
+                ):
+                    # Set up the parameters for simulated annealing
+                    selected_cooling_schedule = cooling_schedules[
+                        settings["cooling_schedule"]
                     ]
-                )
+                    selected_swap_strategy = swap_strategies[settings["swap_strategy"]]
+                    # Start SA
+                    start_time = time.time_ns()
+                    initial_memory = psutil.Process().memory_info().rss
+
+                    cost, path = simulated_annealing(
+                        distance_matrix=distance_matrix,
+                        initial_temp=initial_temp,
+                        cooling_schedule=selected_cooling_schedule,
+                        swap_strategy=selected_swap_strategy,
+                        initial_solution=initial_solution,
+                        epoch_length=epoch_length
+                    )
+
+                    peak_memory = psutil.Process().memory_info().rss
+                    end_time = time.time_ns()
+
+                    # Calculate execution time in microseconds
+                    execution_time_ns = end_time - start_time
+
+                    # Calculate peak memory usage in MB
+                    peak_memory_usage_mb = (peak_memory - initial_memory) / 1024 / 1024
+
+                    # Format the path as a string if necessary
+                    path_str = "-".join(map(str, path))
+
+                    # Write the result immediately to the CSV file
+                    writer.writerow(
+                        [
+                            instance["file_name"],
+                            execution_time_ns,
+                            cost,
+                            path_str,
+                            peak_memory_usage_mb,
+                        ]
+                    )
 
 
 if __name__ == "__main__":
