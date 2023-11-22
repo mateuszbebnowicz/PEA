@@ -190,7 +190,7 @@ def read_tsp_data(filename):
 # Main function to run the program
 def main():
     # Main function to run the program
-    config_file = "config.ini"
+    config_file = 'config.ini'
     settings, tsp_instances = parse_config(config_file)
 
     initial_temp_strategy = initial_temperature_strategies[settings['initial_temperature_strategy']]
