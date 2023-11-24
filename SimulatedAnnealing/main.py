@@ -1,7 +1,6 @@
 import math
 import random
 import csv
-import psutil
 from tqdm import tqdm
 import os
 import time
@@ -96,7 +95,6 @@ def simulated_annealing(distance_matrix, initial_temp, cooling_schedule, swap_st
 
 def calculate_cost(distance_matrix, path):
     cost = 0
-    # Debug print
     for i in range(1, len(path)):
         if path[i - 1] >= len(distance_matrix) or path[i] >= len(distance_matrix):
             raise IndexError(
@@ -107,7 +105,6 @@ def calculate_cost(distance_matrix, path):
                 f"City index cannot be negative: {path[i-1]} or {path[i]}."
             )
         cost += distance_matrix[path[i - 1]][path[i]]
-    # Add the distance to return to the start for a closed loop TSP
     if path:
         cost += distance_matrix[path[-1]][path[0]]
     return cost
@@ -125,23 +122,19 @@ def stopping_condition(current_temp, iteration):
 cooling_schedules = {
     "geometric_cooling": geometric_cooling,
     "boltzmann_cooling": boltzmann_cooling,
-    # Add more cooling schedules as needed
 }
 
 swap_strategies = {
     "two_opt_swap": two_opt_swap,
     "subset_shuffle_swap": subset_shuffle_swap,
-    # Add more swap strategies as needed
 }
 
 initial_temperature_strategies = {
     "fixed_temperature": fixed_temperature,
-    # Add more strategies as needed
 }
 
 initial_solution_strategies = {
     "greedy_initial_solution": greedy_initial_solution,
-    # Add more strategies as needed
 }
 
 
@@ -153,8 +146,8 @@ def parse_config(config_file):
         "swap_strategy": None,
         "initial_temperature_strategy": None,
         "initial_solution_strategy": None,
-        "cooling_rate": 0.95,  # Default value
-        "k": 1,  # Default value for Boltzmann cooling
+        "cooling_rate": 0.95,
+        "k": 1,
     }
     with open(config_file, "r") as file:
         lines = file.readlines()
@@ -183,13 +176,12 @@ def read_tsp_data(filename):
         matrix = []
         for line in lines[1:size + 1]:
             matrix.append(list(map(int, line.split())))
-        best_known_solution = int(lines[size + 1])  # Best known solution is the last number
+        best_known_solution = int(lines[size + 1])
         return matrix, best_known_solution
 
 
 # Main function to run the program
 def main():
-    # Main function to run the program
     config_file = 'config.ini'
     settings, tsp_instances = parse_config(config_file)
 
@@ -204,7 +196,7 @@ def main():
     # Define a range of epoch lengths to test
     epoch_lengths = [10, 50, 100, 500, 1000]
 
-    # Specify the correct delimiter here, if your system expects something other than a comma
+    # Specify the correct delimiter here
     delimiter = ";"
 
     # Open the CSV file in write mode
@@ -214,7 +206,7 @@ def main():
         )
 
         # Write the header if the file is new/empty
-        writer.writerow(["instance", "time", "cost", "path", "peak_memory_usage_in_MB", "error in %"])
+        writer.writerow(["instance", "time", "cost", "path", "error in %"])
 
         # Load or define your distance matrix
         for epoch_length in epoch_lengths:
@@ -222,21 +214,20 @@ def main():
             for instance in tsp_instances:
                 distance_matrix, best_known_solution = read_tsp_data(instance["file_name"])
                 initial_solution = initial_solution_strategy(distance_matrix)
+
+                # Set up the parameters for simulated annealing
+                cooling_schedule_args = {}
+                if settings["cooling_schedule"] == "geometric_cooling":
+                    cooling_schedule_args['cooling_rate'] = settings['cooling_rate']
+                elif settings["cooling_schedule"] == "boltzmann_cooling":
+                    cooling_schedule_args['k'] = settings['k']
+
                 for _ in tqdm(
                     range(instance["times_to_run"]),
                     desc=f"Processing {instance['file_name']}",
                 ):
-
-                    # Set up the parameters for simulated annealing
-                    cooling_schedule_args = {}
-                    if settings["cooling_schedule"] == "geometric_cooling":
-                        cooling_schedule_args['cooling_rate'] = settings['cooling_rate']
-                    elif settings["cooling_schedule"] == "boltzmann_cooling":
-                        cooling_schedule_args['k'] = settings['k']
-
                     # Start SA
                     start_time = time.time_ns()
-                    initial_memory = psutil.Process().memory_info().rss
 
                     cost, path = simulated_annealing(
                         distance_matrix=distance_matrix,
@@ -248,19 +239,15 @@ def main():
                         cooling_schedule_args=cooling_schedule_args
                     )
 
-                    peak_memory = psutil.Process().memory_info().rss
                     end_time = time.time_ns()
 
                     # Calculate error size in %
-                    error_size_percentage = abs(cost - best_known_solution) * 100
+                    error_size_percentage = abs((cost - best_known_solution)/cost) * 100
 
                     # Calculate execution time in microseconds
                     execution_time_ns = end_time - start_time
 
-                    # Calculate peak memory usage in MB
-                    peak_memory_usage_mb = (peak_memory - initial_memory) / 1024 / 1024
-
-                    # Format the path as a string if necessary
+                    # Format the path as a string
                     path_str = "-".join(map(str, path))
 
                     # Write the result immediately to the CSV file
@@ -270,7 +257,6 @@ def main():
                             execution_time_ns,
                             cost,
                             path_str,
-                            peak_memory_usage_mb,
                             error_size_percentage
                         ]
                     )

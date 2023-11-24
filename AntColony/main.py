@@ -2,7 +2,6 @@ import csv
 import os
 import time
 import numpy as np
-import psutil
 from tqdm import tqdm
 
 
@@ -42,7 +41,7 @@ class AntColonyOptimization:
 
     def construct_solution(self):
         num_cities = len(self.cities)
-        path = [np.random.randint(num_cities)]  # Start from a random city
+        path = [0]  # Start from a random city
         while len(path) < num_cities:
             current_city = path[-1]
             probabilities = self.calculate_transition_probabilities(current_city, path)
@@ -85,7 +84,7 @@ class AntColonyOptimization:
             self.pheromone[path[i]][path[i + 1]] += pheromone_to_add
             self.pheromone[path[i + 1]][
                 path[i]
-            ] += pheromone_to_add  # If the graph is undirected
+            ] += pheromone_to_add
 
 
 def parse_config(config_file):
@@ -102,7 +101,7 @@ def parse_config(config_file):
             if "=" in line:
                 key, value = line.split("=")
                 key = key.strip()
-                value = value.split(";")[0].strip()  # Ignore comments
+                value = value.split(";")[0].strip()
                 if key in settings:
                     settings[key] = float(value)
             elif line:
@@ -127,11 +126,11 @@ def read_tsp_data(filename):
             matrix.append(list(map(int, line.split())))
         best_known_solution = int(
             lines[size + 1]
-        )  # Best known solution is the last number
+        )
         return matrix, best_known_solution
 
 
-delimiter = ","
+delimiter = ";"
 
 if __name__ == "__main__":
     params, tsp_instances = parse_config("config.ini")
@@ -141,29 +140,28 @@ if __name__ == "__main__":
         )
 
         # Write the header if the file is new/empty
-        writer.writerow(["instance", "time", "cost", "path", "peak_memory_usage_in_MB", "error in %"])
+        writer.writerow(["time", "cost", "path", "error in %"])
 
         for instance in tsp_instances:
             distance_matrix, best_known_solution = read_tsp_data(instance["file_name"])
 
-            aco = AntColonyOptimization(
-                distance_matrix,
-                alpha=float(params["alpha"]),
-                beta=float(params["beta"]),
-                rho=float(params["rho"]),
-                m=int(instance["number_of_instances"]),
-                tau0=float(instance["number_of_instances"] / best_known_solution),
-            )
             writer.writerow([instance["file_name"], best_known_solution])
             for _ in tqdm(
                     range(instance["times_to_run"]),
                     desc=f"Processing {instance['file_name']}",
             ):
+                aco = AntColonyOptimization(
+                    distance_matrix,
+                    alpha=float(params["alpha"]),
+                    beta=float(params["beta"]),
+                    rho=float(params["rho"]),
+                    m=int(instance["number_of_instances"]),
+                    tau0=float(instance["number_of_instances"] / best_known_solution),
+                )
                 start_time = time.time_ns()
-                initial_memory = psutil.Process().memory_info().rss
 
                 best_path, best_distance = aco.run()
-                peak_memory = psutil.Process().memory_info().rss
+
                 end_time = time.time_ns()
 
                 # Calculate error size in %
@@ -171,9 +169,6 @@ if __name__ == "__main__":
 
                 # Calculate execution time in microseconds
                 execution_time_ns = end_time - start_time
-
-                # Calculate peak memory usage in MB
-                peak_memory_usage_mb = (peak_memory - initial_memory) / 1024 / 1024
 
                 # Format the path as a string if necessary
                 path_str = "-".join(map(str, best_path))
@@ -184,7 +179,6 @@ if __name__ == "__main__":
                         execution_time_ns,
                         best_distance,
                         path_str,
-                        peak_memory_usage_mb,
                         error_size_percentage
                     ]
                 )

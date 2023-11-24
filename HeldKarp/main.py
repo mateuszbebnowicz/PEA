@@ -1,7 +1,6 @@
 import time
 import os
 import csv
-import psutil
 from tqdm import tqdm
 from itertools import combinations
 
@@ -74,7 +73,7 @@ def main():
     tsp_instances = parse_config(config_file)
 
     # Specify the correct delimiter here, if your system expects something other than a comma
-    delimiter = ","
+    delimiter = ";"
 
     # Open the CSV file in write mode
     with open("tsp_hk_results.csv", mode="w", newline="") as file:
@@ -83,7 +82,7 @@ def main():
         )
 
         # Write the header if the file is new/empty
-        writer.writerow(["instance", "time", "cost", "path", "peak_memory_usage_in_MB"])
+        writer.writerow(["instance", "time", "cost", "path"])
 
         for instance in tsp_instances:
             distance_matrix = read_tsp_data(instance["file_name"])
@@ -92,19 +91,13 @@ def main():
                 desc=f"Processing {instance['file_name']}",
             ):
                 start_time = time.time_ns()
-                # gc.disable()
-                initial_memory = psutil.Process().memory_info().rss
 
                 cost, path = held_karp_algorithm(distance_matrix)
 
-                peak_memory = psutil.Process().memory_info().rss
                 end_time = time.time_ns()
-                # gc.enable()
+
                 # Calculate execution time in microseconds
                 execution_time_ns = end_time - start_time
-
-                # Calculate peak memory usage in MB
-                peak_memory_usage_mb = (peak_memory - initial_memory) / 1024 / 1024
 
                 # Format the path as a string if necessary
                 path_str = "-".join(map(str, path))
@@ -116,7 +109,6 @@ def main():
                         execution_time_ns,
                         cost,
                         path_str,
-                        peak_memory_usage_mb,
                     ]
                 )
     input("Press anything to exit")
