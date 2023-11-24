@@ -118,6 +118,7 @@ def main():
                         peak_memory_usage_mb,
                     ]
                 )
+    input("Press anything to exit")
 
 
 if __name__ == "__main__":
