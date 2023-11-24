@@ -92,13 +92,14 @@ def main():
                 desc=f"Processing {instance['file_name']}",
             ):
                 start_time = time.time_ns()
+                # gc.disable()
                 initial_memory = psutil.Process().memory_info().rss
 
                 cost, path = held_karp_algorithm(distance_matrix)
 
                 peak_memory = psutil.Process().memory_info().rss
                 end_time = time.time_ns()
-
+                # gc.enable()
                 # Calculate execution time in microseconds
                 execution_time_ns = end_time - start_time
 

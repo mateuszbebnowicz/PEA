@@ -205,7 +205,7 @@ def main():
     epoch_lengths = [10, 50, 100, 500, 1000]
 
     # Specify the correct delimiter here, if your system expects something other than a comma
-    delimiter = ","
+    delimiter = ";"
 
     # Open the CSV file in write mode
     with open("tsp_sa_results.csv", mode="w", newline="") as file:
